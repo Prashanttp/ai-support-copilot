@@ -28,84 +28,82 @@ export const EvaluationView: React.FC<EvaluationViewProps> = ({ isLiveLLM }) => 
   const runEvaluation = () => {
     setIsRunning(true);
 
-    setTimeout(() => {
-      let passedCount = 0;
-      let categoryCorrectCount = 0;
-      let totalConfidence = 0;
-      let edgeCasesCount = 0;
-      let edgeCasesPassedCount = 0;
+    let passedCount = 0;
+    let categoryCorrectCount = 0;
+    let totalConfidence = 0;
+    let edgeCasesCount = 0;
+    let edgeCasesPassedCount = 0;
 
-      const breakdown: Record<TicketCategory, { total: number; correct: number }> = {
-        billing: { total: 0, correct: 0 },
-        product: { total: 0, correct: 0 },
-        'account access': { total: 0, correct: 0 },
-        feedback: { total: 0, correct: 0 },
-        other: { total: 0, correct: 0 }
+    const breakdown: Record<TicketCategory, { total: number; correct: number }> = {
+      billing: { total: 0, correct: 0 },
+      product: { total: 0, correct: 0 },
+      'account access': { total: 0, correct: 0 },
+      feedback: { total: 0, correct: 0 },
+      other: { total: 0, correct: 0 }
+    };
+
+    const evaluatedItems: EvaluationResultItem[] = evaluationDataset.map((testCase) => {
+      const actual = analyzeDeterministically(testCase.inputMessage);
+      
+      const categoryMatch = actual.category === testCase.expectedCategory;
+      const priorityMatch = actual.priority === testCase.expectedPriority;
+      const sentimentMatch = actual.sentiment === testCase.expectedSentiment;
+      const humanReviewMatch = actual.humanReviewRequired === testCase.expectedHumanReview;
+
+      // Count category breakdown
+      if (breakdown[testCase.expectedCategory]) {
+        breakdown[testCase.expectedCategory].total += 1;
+        if (categoryMatch) {
+          breakdown[testCase.expectedCategory].correct += 1;
+        }
+      }
+
+      if (categoryMatch) categoryCorrectCount++;
+      totalConfidence += actual.confidence;
+
+      const isEdgeCase = testCase.edgeCaseType !== 'standard';
+      if (isEdgeCase) {
+        edgeCasesCount++;
+        if (categoryMatch && humanReviewMatch) {
+          edgeCasesPassedCount++;
+        }
+      }
+
+      // An item passes if category matches and human review requirements are respected
+      const passed = categoryMatch && (isEdgeCase ? humanReviewMatch : true);
+      if (passed) passedCount++;
+
+      return {
+        testCase,
+        actualResult: actual,
+        categoryMatch,
+        priorityMatch,
+        sentimentMatch,
+        humanReviewMatch,
+        passed
       };
+    });
 
-      const evaluatedItems: EvaluationResultItem[] = evaluationDataset.map((testCase) => {
-        const actual = analyzeDeterministically(testCase.inputMessage);
-        
-        const categoryMatch = actual.category === testCase.expectedCategory;
-        const priorityMatch = actual.priority === testCase.expectedPriority;
-        const sentimentMatch = actual.sentiment === testCase.expectedSentiment;
-        const humanReviewMatch = actual.humanReviewRequired === testCase.expectedHumanReview;
+    const total = evaluatedItems.length;
+    const categoryAccuracy = total > 0 ? (categoryCorrectCount / total) * 100 : 0;
+    const overallAccuracy = total > 0 ? (passedCount / total) * 100 : 0;
+    const averageConfidence = total > 0 ? (totalConfidence / total) * 100 : 0;
 
-        // Count category breakdown
-        if (breakdown[testCase.expectedCategory]) {
-          breakdown[testCase.expectedCategory].total += 1;
-          if (categoryMatch) {
-            breakdown[testCase.expectedCategory].correct += 1;
-          }
-        }
+    setResults(evaluatedItems);
+    setSummary({
+      total,
+      passed: passedCount,
+      categoryAccuracy: Math.round(categoryAccuracy),
+      overallAccuracy: Math.round(overallAccuracy),
+      categoryBreakdown: breakdown,
+      averageConfidence: Math.round(averageConfidence),
+      edgeCasesTested: edgeCasesCount,
+      edgeCasesPassed: edgeCasesPassedCount,
+      executedAt: new Date().toISOString(),
+      mode: isLiveLLM ? 'live-llm' : 'demo-mode'
+    });
 
-        if (categoryMatch) categoryCorrectCount++;
-        totalConfidence += actual.confidence;
-
-        const isEdgeCase = testCase.edgeCaseType !== 'standard';
-        if (isEdgeCase) {
-          edgeCasesCount++;
-          if (categoryMatch && humanReviewMatch) {
-            edgeCasesPassedCount++;
-          }
-        }
-
-        // An item passes if category matches and human review requirements are respected
-        const passed = categoryMatch && (isEdgeCase ? humanReviewMatch : true);
-        if (passed) passedCount++;
-
-        return {
-          testCase,
-          actualResult: actual,
-          categoryMatch,
-          priorityMatch,
-          sentimentMatch,
-          humanReviewMatch,
-          passed
-        };
-      });
-
-      const total = evaluatedItems.length;
-      const categoryAccuracy = total > 0 ? (categoryCorrectCount / total) * 100 : 0;
-      const overallAccuracy = total > 0 ? (passedCount / total) * 100 : 0;
-      const averageConfidence = total > 0 ? (totalConfidence / total) * 100 : 0;
-
-      setResults(evaluatedItems);
-      setSummary({
-        total,
-        passed: passedCount,
-        categoryAccuracy: Math.round(categoryAccuracy),
-        overallAccuracy: Math.round(overallAccuracy),
-        categoryBreakdown: breakdown,
-        averageConfidence: Math.round(averageConfidence),
-        edgeCasesTested: edgeCasesCount,
-        edgeCasesPassed: edgeCasesPassedCount,
-        executedAt: new Date().toISOString(),
-        mode: isLiveLLM ? 'live-llm' : 'demo-mode'
-      });
-
-      setIsRunning(false);
-    }, 400);
+    setIsRunning(false);
   };
 
   // Run initial evaluation on mount
